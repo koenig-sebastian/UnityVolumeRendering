@@ -8,6 +8,9 @@
         _TFTex("Transfer Function Texture (Generated)", 2D) = "" {}
         _MinVal("Min val", Range(0.0, 1.0)) = 0.0
         _MaxVal("Max val", Range(0.0, 1.0)) = 1.0
+        _NoiseIntensity("Noise", Range(0.0, 10.0)) = 1.0
+        _SpecularIntensity("Specular", Range(0.0, 1.0)) = 0.1
+        _ReflectionIntensity("Reflection", Range(0.0, 1.0)) = 0.1
     }
     SubShader
     {
@@ -28,6 +31,9 @@
             #pragma multi_compile DEPTHWRITE_ON DEPTHWRITE_OFF
             #pragma vertex vert
             #pragma fragment frag
+
+            #pragma exclude_renderers d3d11_9x
+            #pragma exclude_renderers d3d9
 
             #include "UnityCG.cginc"
 
@@ -63,6 +69,9 @@
 
             float _MinVal;
             float _MaxVal;
+            float _NoiseIntensity;
+            float _SpecularIntensity;
+            float _ReflectionIntensity;
 
 #if CUTOUT_ON
             float4x4 _CrossSectionMatrix;
@@ -104,6 +113,22 @@
                 return diffuse + specular;
             }
 
+            // Performs lighting calculations, and returns a modified colour.
+            float3 calculateLightingWithReflection(float3 col, float3 normal, float3 lightDir, float3 eyeDir, float specularIntensity, float reflectionIntensity)
+            {
+                float ndotl = max(lerp(0.0f, 1.5f, dot(normal, lightDir)), 0.5f); // modified, to avoid volume becoming too dark
+                float3 diffuse = ndotl * col;
+                float3 v = eyeDir;
+                float3 r = normalize(reflect(-lightDir, normal));
+                float rdotv = max( dot( r, v ), 0.0 );
+                float3 specular = pow(rdotv, 32.0f) * float3(1.0f, 1.0f, 1.0f) * specularIntensity;
+                half4 skyData = UNITY_SAMPLE_TEXCUBE(unity_SpecCube0, normal);
+                half3 skyColor = DecodeHDR (skyData, unity_SpecCube0_HDR)*reflectionIntensity;
+                return diffuse + specular + skyColor;
+            }
+
+
+
             // Converts local position to depth value
             float localToDepth(float3 localPos)
             {
@@ -141,7 +166,8 @@
             {
                 frag_in o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = v.uv;
+                // o.uv = v.uv;
+                o.uv = ComputeScreenPos(o.vertex);
                 o.vertexLocal = v.vertex;
                 o.normal = UnityObjectToWorldNormal(v.normal);
                 return o;
@@ -160,7 +186,7 @@
                 rayDir = normalize(rayDir);
 
                 // Create a small random offset in order to remove artifacts
-                rayStartPos = rayStartPos + (2.0f * rayDir / NUM_STEPS) * tex2D(_NoiseTex, float2(i.uv.x, i.uv.y)).r;
+                rayStartPos = rayStartPos + (_NoiseIntensity * rayDir / NUM_STEPS) * tex2D(_NoiseTex, float2(i.uv.x, i.uv.y)).r;
 
                 float4 col = float4(0.0f, 0.0f, 0.0f, 0.0f);
                 uint iDepth = 0;
@@ -168,7 +194,7 @@
                 {
                     const float t = iStep * stepSize;
                     const float3 currPos = rayStartPos + rayDir * t;
-                    if (currPos.x < 0.0f || currPos.x >= 1.0f || currPos.y < 0.0f || currPos.y > 1.0f || currPos.z < 0.0f || currPos.z > 1.0f) // TODO: avoid branch?
+                    if (currPos.x < 0.0f || currPos.x > 1.0f || currPos.y < 0.0f || currPos.y > 1.0f || currPos.z < 0.0f || currPos.z > 1.0f) // TODO: avoid branch?
                         break;
 
                     // Perform slice culling (cross section plane)
@@ -239,7 +265,7 @@
                     const float t = iStep * stepSize;
                     const float3 currPos = rayStartPos + rayDir * t;
                     // Stop when we are outside the box
-                    if (currPos.x < -0.0001f || currPos.x >= 1.0001f || currPos.y < -0.0001f || currPos.y > 1.0001f || currPos.z < -0.0001f || currPos.z > 1.0001f) // TODO: avoid branch?
+                    if (currPos.x < -0.0001f || currPos.x > 1.0001f || currPos.y < -0.0001f || currPos.y > 1.0001f || currPos.z < -0.0001f || currPos.z > 1.0001f) // TODO: avoid branch?
                         break;
 
 #ifdef CUTOUT_ON
@@ -265,17 +291,19 @@
             // Draws the first point (closest to camera) with a density within the user-defined thresholds.
             frag_out frag_surf(frag_in i)
             {
-#define NUM_STEPS 1024
-                const float stepSize = 1.732f/*greatest distance in box*/ / NUM_STEPS;
+#define NUM_STEPS 128
+                const float stepSize = 1.732f / NUM_STEPS; /*greatest distance in box*/
 
                 float3 rayStartPos = i.vertexLocal + float3(0.5f, 0.5f, 0.5f);
                 float3 rayDir = normalize(ObjSpaceViewDir(float4(i.vertexLocal, 0.0f)));
+                float3 lightDir = normalize(ObjSpaceLightDir(float4(i.vertexLocal, 0.0f)));
+
                 // Start from the end, tand trace towards the vertex
                 rayStartPos += rayDir * stepSize * NUM_STEPS;
                 rayDir = -rayDir;
 
                 // Create a small random offset in order to remove artifacts
-                rayStartPos = rayStartPos + (2.0f * rayDir / NUM_STEPS) * tex2D(_NoiseTex, float2(i.uv.x, i.uv.y)).r;
+                rayStartPos = rayStartPos + (_NoiseIntensity * rayDir / NUM_STEPS) * tex2D(_NoiseTex, float2(i.uv.x, i.uv.y)).r;
 
                 float4 col = float4(0,0,0,0);
                 for (uint iStep = 0; iStep < NUM_STEPS; iStep++)
@@ -283,7 +311,7 @@
                     const float t = iStep * stepSize;
                     const float3 currPos = rayStartPos + rayDir * t;
                     // Make sure we are inside the box
-                    if (currPos.x < 0.0f || currPos.x >= 1.0f || currPos.y < 0.0f || currPos.y > 1.0f || currPos.z < 0.0f || currPos.z > 1.0f) // TODO: avoid branch?
+                    if (currPos.x < 0.0f || currPos.x > 1.0f || currPos.y < 0.0f || currPos.y > 1.0f || currPos.z < 0.0f || currPos.z > 1.0f) // TODO: avoid branch?
                         continue;
 
 #ifdef CUTOUT_ON
@@ -296,7 +324,9 @@
                     {
                         float3 normal = normalize(getGradient(currPos));
                         col = getTF1DColour(density);
-                        col.rgb = calculateLighting(col.rgb, normal, -rayDir, -rayDir, 0.15);
+                        // col.rgb = calculateLighting(col.rgb, normal, -rayDir, -rayDir, 0.15);
+                        // col.rgb = calculateLighting(col.rgb, normal, lightDir, -rayDir, 0.15);
+                        col.rgb = calculateLightingWithReflection(col.rgb, normal, lightDir, -rayDir, _SpecularIntensity, _ReflectionIntensity);
                         col.a = 1.0f;
                         break;
                     }

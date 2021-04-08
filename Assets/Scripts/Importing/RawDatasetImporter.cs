@@ -152,27 +152,29 @@ namespace UnityVolumeRendering
 
         private int GetSampleFormatSize(DataContentFormat format)
         {
+            int n = 1;
             switch (format)
             {
                 case DataContentFormat.Int8:
-                    return 1;
+                    n = 1;
                     break;
                 case DataContentFormat.Uint8:
-                    return 1;
+                    n = 1;
                     break;
                 case DataContentFormat.Int16:
-                    return 2;
+                    n = 2;
                     break;
                 case DataContentFormat.Uint16:
-                    return 2;
+                    n = 2;
                     break;
                 case DataContentFormat.Int32:
-                    return 4;
+                    n = 4;
                     break;
                 case DataContentFormat.Uint32:
-                    return 4;
+                    n = 4;
                     break;
             }
+            return n;
             throw new NotImplementedException();
         }
     }

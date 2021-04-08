@@ -1,8 +1,9 @@
-﻿using UnityEngine;
+﻿using System.Diagnostics;
+using UnityEngine;
 
 namespace UnityVolumeRendering
 {
-    [ExecuteInEditMode]
+    [ExecuteAlways]
     public class VolumeRenderedObject : MonoBehaviour
     {
         [HideInInspector]
@@ -11,17 +12,20 @@ namespace UnityVolumeRendering
         [HideInInspector]
         public TransferFunction2D transferFunction2D;
 
-        [HideInInspector]
         public VolumeDataset dataset;
-
-        [HideInInspector]
         public MeshRenderer meshRenderer;
 
-        private RenderMode renderMode;
-        private TFRenderMode tfRenderMode;
-        private bool lightingEnabled;
+        [HideInInspector]
+        public RenderMode renderMode;
 
-        private Vector2 visibilityWindow = new Vector2(0.0f, 1.0f);
+        [HideInInspector]
+        public TFRenderMode tfRenderMode;
+        
+        [HideInInspector]
+        public bool lightingEnabled;
+
+        [HideInInspector]
+        public Vector2 visibilityWindow = new Vector2(0.0f, 1.0f);
 
         public SlicingPlane CreateSlicingPlane()
         {
@@ -45,10 +49,14 @@ namespace UnityVolumeRendering
         {
             if(renderMode != mode)
             {
+                // Get call stack
+                StackTrace stackTrace = new StackTrace();
+                // Get calling method name
+                UnityEngine.Debug.Log(stackTrace.GetFrame(1).GetMethod().Name);
                 renderMode = mode;
                 SetVisibilityWindow(0.0f, 1.0f); // reset visibility window
             }
-            UpdateMaaterialProperties();
+            UpdateMaterialProperties();
         }
 
         public void SetTransferFunctionMode(TFRenderMode mode)
@@ -58,7 +66,7 @@ namespace UnityVolumeRendering
                 transferFunction.GenerateTexture();
             else if(transferFunction2D != null)
                 transferFunction2D.GenerateTexture();
-            UpdateMaaterialProperties();
+            UpdateMaterialProperties();
         }
 
         public TFRenderMode GetTransferFunctionMode()
@@ -89,7 +97,7 @@ namespace UnityVolumeRendering
         public void SetVisibilityWindow(Vector2 window)
         {
             visibilityWindow = window;
-            UpdateMaaterialProperties();
+            UpdateMaterialProperties();
         }
 
         public Vector2 GetVisibilityWindow()
@@ -97,7 +105,7 @@ namespace UnityVolumeRendering
             return visibilityWindow;
         }
 
-        private void UpdateMaaterialProperties()
+        private void UpdateMaterialProperties()
         {
             bool useGradientTexture = tfRenderMode == TFRenderMode.TF2D || renderMode == RenderMode.IsosurfaceRendering || lightingEnabled;
             meshRenderer.sharedMaterial.SetTexture("_GradientTex", useGradientTexture ? dataset.GetGradientTexture() : null);
@@ -149,7 +157,8 @@ namespace UnityVolumeRendering
 
         private void Start()
         {
-            UpdateMaaterialProperties();
+            UnityEngine.Debug.Log(renderMode);
+            UpdateMaterialProperties();
         }
     }
 }
